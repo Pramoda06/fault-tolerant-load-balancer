@@ -1,0 +1,57 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+ENV/
+
+# ---- Runtime data (SQLite databases, backups, write-ahead log) ----
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.wal
+*.jsonl
+
+# ---- Logs ----
+*.log
+logs/
+
+# ---- Generated experiment results ----
+reports/
+
+# ---- Secrets and local configuration ----
+.env
+.env.*
+*.pem
+*.key
+secrets*
+credentials*
+
+# ---- Local copies, transfer folders and backups ----
+_backup_current_version/
+_incoming/
+*.zip
+
+# ---- Paper drafts, slides and study notes (not part of the code) ----
+paper_v2/
+paper_v3/
+research_paper.tex
+research_paper.html
+Research_Paper_Load_Balancing.pdf
+*.pptx
+Project_Explained_Simply.pdf
+Project_Flowcharts.pdf
+Project_Story_Guide.pdf
+
+# ---- Editor and OS files ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

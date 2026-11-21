@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Balancing & Fault-Tolerant Network Monitoring Using a Reverse Proxy</title>
+    <script>
+        try { var t = localStorage.getItem("lbm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/vendor/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="shell">
+
+    <!-- ============ Sidebar ============ -->
+    <aside class="sidebar">
+        <div class="brand">
+            <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="4.5" r="2.2"/><circle cx="12" cy="12" r="2.2"/>
+                <circle cx="4.5" cy="19.5" r="2.2"/><circle cx="12" cy="19.5" r="2.2"/><circle cx="19.5" cy="19.5" r="2.2"/>
+                <path d="M12 6.7v3.1M12 14.2v3.1M10.4 13.6 5.9 17.8M13.6 13.6l4.5 4.2" fill="none" stroke-width="1.4"/>
+            </svg>
+            <div>
+                <div class="brand-name">Reverse Proxy LB</div>
+                <div class="brand-sub">Computer Networks Project</div>
+            </div>
+        </div>
+
+        <nav class="nav">
+            <a href="#overview" data-page="overview" class="nav-item">
+                <svg viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1.2"/><rect x="11" y="3" width="6" height="6" rx="1.2"/><rect x="3" y="11" width="6" height="6" rx="1.2"/><rect x="11" y="11" width="6" height="6" rx="1.2"/></svg>
+                Overview
+            </a>
+            <a href="#load-balancing" data-page="load-balancing" class="nav-item">
+                <svg viewBox="0 0 20 20"><path d="M10 3v5M10 8 4 15M10 8v7M10 8l6 7"/><circle cx="10" cy="3" r="1.2"/></svg>
+                Load Balancing
+            </a>
+            <a href="#fault-tolerance" data-page="fault-tolerance" class="nav-item">
+                <svg viewBox="0 0 20 20"><path d="M10 2.8 16 5v4.6c0 3.8-2.6 6.4-6 7.6-3.4-1.2-6-3.8-6-7.6V5z"/><path d="m7.3 10 1.9 1.9 3.6-3.8"/></svg>
+                Fault Tolerance
+            </a>
+            <a href="#monitoring" data-page="monitoring" class="nav-item">
+                <svg viewBox="0 0 20 20"><path d="M2.5 10.5h3l2-5 3 9 2-4h5"/></svg>
+                Monitoring
+            </a>
+            <a href="#capacity" data-page="capacity" class="nav-item">
+                <svg viewBox="0 0 20 20"><rect x="3" y="11" width="3" height="6" rx="0.8"/><rect x="8.5" y="7" width="3" height="10" rx="0.8"/><rect x="14" y="3" width="3" height="14" rx="0.8"/></svg>
+                Resilience &amp; Capacity
+            </a>
+            <a href="#data-recovery" data-page="data-recovery" class="nav-item">
+                <svg viewBox="0 0 20 20"><ellipse cx="10" cy="5" rx="6" ry="2.3"/><path d="M4 5v10c0 1.3 2.7 2.3 6 2.3s6-1 6-2.3V5M4 10c0 1.3 2.7 2.3 6 2.3s6-1 6-2.3"/></svg>
+                Data Recovery
+            </a>
+        </nav>
+
+        <div class="side-section">
+            <div class="side-label">Simulation</div>
+
+            <div class="traffic-ctl">
+                <button id="btn-traffic" class="btn btn-block">
+                    <span class="traffic-led" id="traffic-led"></span>
+                    <span id="traffic-label">Start traffic</span>
+                </button>
+                <div class="rate-select rate-5" role="group" aria-label="Request rate" data-traffic>
+                    <button data-rate="2">2</button>
+                    <button data-rate="5" class="on">5</button>
+                    <button data-rate="10">10</button>
+                    <button data-rate="20">20</button>
+                    <button data-rate="40">40</button>
+                </div>
+                <div class="side-hint">requests / second · shape on <a href="#capacity" class="link">Resilience &amp; Capacity</a></div>
+            </div>
+
+            <button id="btn-demo" class="btn btn-block btn-ghost">
+                <svg viewBox="0 0 16 16" class="ico"><path d="M5 3.5v9l7-4.5z"/></svg>
+                Demo mode
+            </button>
+            <button id="btn-reset" class="btn btn-block btn-ghost">
+                <svg viewBox="0 0 16 16" class="ico stroke"><path d="M3 8a5 5 0 1 0 1.6-3.7M3 2.5v3h3"/></svg>
+                Reset simulation
+            </button>
+        </div>
+
+        <div class="side-foot">
+            <div class="foot-line"><span class="mono">127.0.0.1:{{ config.LOAD_BALANCER_PORT }}</span></div>
+            <div class="foot-line muted">Health check every {{ config.HEALTH_CHECK_INTERVAL|round|int }} s</div>
+            <button id="btn-theme" class="theme-toggle" title="Toggle light / dark">
+                <svg viewBox="0 0 16 16"><path d="M8 1.5a6.5 6.5 0 1 0 0 13z"/><circle cx="8" cy="8" r="6.5" fill="none"/></svg>
+                <span id="theme-label">Light mode</span>
+            </button>
+        </div>
+    </aside>
+
+    <!-- ============ Main ============ -->
+    <main class="main">
+
+        <!-- Demo narration bar (visible only while demo runs) -->
+        <div class="demo-bar" id="demo-bar" hidden>
+            <div class="demo-progress" id="demo-progress"></div>
+            <div class="demo-body">
+                <span class="demo-tag">Demo</span>
+                <span class="demo-step" id="demo-step"></span>
+                <span class="demo-text" id="demo-text"></span>
+            </div>
+            <button class="btn btn-sm btn-ghost" id="btn-demo-stop">Stop</button>
+        </div>
+
+        <!-- Connection lost notice -->
+        <div class="conn-lost" id="conn-lost" hidden>
+            Cannot reach the reverse proxy at 127.0.0.1:{{ config.LOAD_BALANCER_PORT }}. Is <span class="mono">run_all.py</span> running?
+        </div>
+
+        <!-- ================= PAGE: OVERVIEW ================= -->
+        <section class="page" id="page-overview" data-page="overview">
+            <header class="page-head">
+                <div>
+                    <h1>Load Balancing &amp; Fault-Tolerant Network Monitoring</h1>
+                    <p class="page-desc">Using a reverse proxy: every client request enters the proxy, which balances it across healthy backends, monitors their health and routes around failures.</p>
+                </div>
+                <div class="sys-status" data-status></div>
+            </header>
+
+            <div class="panel topo-panel">
+                <div class="topo" data-topo="overview"></div>
+            </div>
+
+            <div class="panel stat-strip">
+                <div class="stat">
+                    <div class="stat-label">Total requests</div>
+                    <div class="stat-value" id="ov-total">0</div>
+                    <div class="stat-sub" id="ov-total-sub">&nbsp;</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Request rate</div>
+                    <div class="stat-value"><span id="ov-rate">0</span><span class="unit">req/s</span></div>
+                    <div class="stat-sub">last 5 seconds</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Healthy backends</div>
+                    <div class="stat-value"><span id="ov-healthy">–</span><span class="unit" id="ov-healthy-of"></span></div>
+                    <div class="stat-sub">available for routing</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Avg response time</div>
+                    <div class="stat-value"><span id="ov-latency">–</span><span class="unit">ms</span></div>
+                    <div class="stat-sub">last 50 requests</div>
+                </div>
+            </div>
+
+            <div class="section-head">
+                <h2>Recent events</h2>
+                <a href="#monitoring" class="link">View timeline →</a>
+            </div>
+            <ul class="events" id="ov-events"></ul>
+        </section>
+
+        <!-- ================= PAGE: LOAD BALANCING ================= -->
+        <section class="page" id="page-load-balancing" data-page="load-balancing" hidden>
+            <header class="page-head">
+                <div>
+                    <h1>Load Balancing</h1>
+                    <p class="page-desc">How the reverse proxy decides which backend handles each incoming request.</p>
+                </div>
+                <div class="algo-wrap">
+                    <span class="algo-label">Routing strategy</span>
+                    <div class="algo-switch" role="group" aria-label="Routing strategy">
+                        <button data-algo="ROUND_ROBIN" title="Round Robin">Round Robin</button>
+                        <button data-algo="WEIGHTED_ROUND_ROBIN" title="Weighted Round Robin">Weighted RR</button>
+                        <button data-algo="LEAST_CONNECTIONS" title="Least Connections">Least Connections</button>
+                        <button data-algo="WEIGHTED_LEAST_CONNECTIONS" title="Weighted Least Connections">Weighted LC</button>
+                        <button data-algo="LEAST_RESPONSE_TIME" title="Least Response Time">Least Response Time</button>
+                        <button data-algo="IP_HASH" title="IP Hash (sticky routing)">IP Hash</button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="panel topo-panel">
+                <div class="topo" data-topo="lb"></div>
+            </div>
+
+            <div class="grid-2-1">
+                <div class="col">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h2>Request distribution</h2>
+                            <span class="panel-note" id="lb-dist-note"></span>
+                        </div>
+                        <table class="tbl">
+                            <thead>
+                                <tr>
+                                    <th>Server</th>
+                                    <th>Capacity</th>
+                                    <th class="num">Requests</th>
+                                    <th class="w-share">Share of traffic</th>
+                                    <th class="num">Avg response</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lb-table"></tbody>
+                        </table>
+                        <div class="legend-inline" id="lb-legend"></div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h2>Routing sequence</h2>
+                            <span class="panel-note">last 24 requests, oldest first</span>
+                        </div>
+                        <div class="seq" id="lb-seq"></div>
+                        <div class="seq-empty" id="lb-seq-empty">Start traffic to see each request's destination.</div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h2>Trace one request</h2>
+                            <span class="panel-note">send one real request and see each step it took</span>
+                        </div>
+                        <div class="form-grid form-grid-4">
+                            <label>Pretend to be client<select id="tr-ip"><option value="">this browser</option><option value="10.1.0.5" selected>10.1.0.5</option><option value="10.1.0.9">10.1.0.9</option><option value="10.1.0.42">10.1.0.42</option></select></label>
+                            <label>Ask for<select id="tr-item"><option value="">a normal request</option><option value="7">item 7 (can be cached)</option></select></label>
+                        </div>
+                        <div class="btn-row"><button class="btn btn-sm btn-primary" id="tr-send">Send and trace</button><span class="muted small">Tip: with IP Hash, the same client always lands on the same server.</span></div>
+                        <div id="tr-out"></div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h2>Strategy comparison</h2>
+                            <span class="panel-note">same workload, actual responses</span>
+                        </div>
+                        <div class="wl-ctl">
+                            <label>Requests
+                                <span class="rate-select wl-seg" data-wl="requests"><button data-v="30">30</button><button data-v="60" class="on">60</button><button data-v="120">120</button></span>
+                            </label>
+                            <label>Parallel
+                                <span class="rate-select wl-seg" data-wl="parallel"><button data-v="1" class="on">1</button><button data-v="3">3</button><button data-v="6">6</button></span>
+                            </label>
+                            <label>Clients
+                                <span class="rate-select wl-seg" data-wl="clients"><button data-v="1" class="on">1</button><button data-v="8">8</button><button data-v="32">32</button></span>
+                            </label>
+                            <button class="btn btn-sm" id="btn-workload">Run workload</button>
+                            <button class="btn btn-sm btn-ghost" id="btn-workload-clear">Clear</button>
+                        </div>
+                        <div class="wl-scroll">
+                            <table class="tbl wl-tbl">
+                                <thead id="wl-head"></thead>
+                                <tbody id="wl-table"></tbody>
+                            </table>
+                        </div>
+                        <div class="seq-empty" id="wl-note">Runs the workload with the active strategy (traffic generator paused). Repeat after switching strategy to compare.</div>
+                    </div>
+                </div>
+
+                <div class="panel howto-panel">
+                    <h2>How routing works</h2>
+                    <div id="lb-howto"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= PAGE: FAULT TOLERANCE ================= -->
+        <section class="page" id="page-fault-tolerance" data-page="fault-tolerance" hidden>
+            <header class="page-head">
+                <div>
+                    <h1>Fault Tolerance</h1>
+                    <p class="page-desc">Fail a server and watch the reverse proxy detect it, stop routing to it, and return it to routing after recovery.</p>
+                </div>
+                <div class="sys-status" data-status></div>
+            </header>
+
+            <div class="panel topo-panel">
+                <div class="topo" data-topo="ft"></div>
+            </div>
+
+            <div class="panel ar-panel" id="ar-panel">
+                <div class="ar-head">
+                    <div class="ar-title">
+                        <h2>Automatic backend recovery</h2>
+                        <span class="ar-enabled" id="ar-enabled"></span>
+                    </div>
+                    <div class="ar-actions">
+                        <button class="btn btn-sm btn-fail" id="btn-fail-all">Fail all servers</button>
+                        <button class="btn btn-sm btn-recover" id="btn-recover-all">Recover all</button>
+                    </div>
+                </div>
+                <div class="ar-summary">
+                    <div class="ar-avail">
+                        <div class="stat-label">Backend availability</div>
+                        <div class="ar-avail-value" id="ar-avail">–</div>
+                    </div>
+                    <div class="ar-msg" id="ar-msg"></div>
+                </div>
+                <ol class="pipeline" id="ar-pipeline"></ol>
+            </div>
+
+            <div class="ft-grid">
+                <div class="ft-col">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h2>Simulate failure</h2>
+                            <span class="panel-note">choose the fault, then Fail a server</span>
+                        </div>
+                        <div class="fx-ctl">
+                            <label>Fault type<select id="fx-type"></select></label>
+                            <label id="fx-param-wrap">Parameter<input type="number" id="fx-param"></label>
+                        </div>
+                        <div class="fx-help" id="fx-help"></div>
+                        <div class="ctl-list" id="ft-controls"></div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <h2>Measured timings</h2>
+                            <span class="panel-note">latest incident</span>
+                        </div>
+                        <dl class="kv">
+                            <div><dt>Failure detection<span>failure → removed from routing</span></dt><dd><span id="ft-t-detect">–</span> ms</dd></div>
+                            <div><dt>Traffic redirection<span>removal → first rerouted request</span></dt><dd><span id="ft-t-failover">–</span> ms</dd></div>
+                            <div><dt>Recovery detection<span>server back → first passing check</span></dt><dd><span id="ft-t-recover">–</span> ms</dd></div>
+                            <div><dt>Re-admission<span id="ft-t-readmit-sub">probation before returning to routing</span></dt><dd><span id="ft-t-readmit">–</span> ms</dd></div>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2>Failover sequence</h2>
+                        <span class="panel-note" id="ft-seq-note"></span>
+                    </div>
+                    <ol class="stepper" id="ft-stepper"></ol>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Circuit breakers and active faults</h2>
+                    <div class="btn-row-inline">
+                        <button class="btn btn-sm btn-ghost" id="fx-clear-all">Clear all faults</button>
+                        <button class="btn btn-sm btn-ghost" id="fx-cb-reset">Reset circuit breakers</button>
+                    </div>
+                </div>
+                <table class="tbl tbl-compact">
+                    <thead><tr><th>Server</th><th>Health</th><th>Circuit breaker</th><th>Active faults</th><th class="num">Last probe</th><th class="num">Circuit opens</th></tr></thead>
+                    <tbody id="fx-table"></tbody>
+                </table>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Fault timeline</h2>
+                    <span class="panel-note">injection &rarr; detection &rarr; clear &rarr; recovery, measured by the proxy</span>
+                </div>
+                <table class="tbl tbl-compact">
+                    <thead><tr><th>Fault</th><th>Server</th><th>Injected</th><th class="num">Detected after</th><th>Detected by</th><th>Cleared</th><th class="num">Back in routing after</th><th>Outcome</th></tr></thead>
+                    <tbody id="fx-records"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ================= PAGE: MONITORING ================= -->
+        <section class="page" id="page-monitoring" data-page="monitoring" hidden>
+            <header class="page-head">
+                <div>
+                    <h1>Monitoring</h1>
+                    <p class="page-desc">What the proxy sees internally: health checks, per-server load and response times, and the event timeline.</p>
+                </div>
+                <div class="sys-status" data-status></div>
+            </header>
+
+            <div class="grid-2">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2>Server load over time</h2>
+                        <span class="panel-note">requests / second</span>
+                    </div>
+                    <div class="chart-box"><canvas id="chart-load"></canvas></div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2>Response time</h2>
+                        <span class="panel-note">ms, average of last 20 per server</span>
+                    </div>
+                    <div class="chart-box"><canvas id="chart-latency"></canvas></div>
+                </div>
+            </div>
+            <div class="chart-legend" id="chart-legend"></div>
+
+            <div class="panel dist-panel">
+                <div class="panel-head">
+                    <h2>Request distribution</h2>
+                    <span class="panel-note" id="mon-dist-note">since last reset</span>
+                </div>
+                <div class="dist-bar" id="mon-dist"></div>
+            </div>
+
+
+
+            <div class="panel">
+                <table class="tbl tbl-mon">
+                    <thead>
+                        <tr>
+                            <th>Server</th>
+                            <th>Health</th>
+                            <th class="num">Load</th>
+                            <th class="num">Throughput</th>
+                            <th class="num">Avg response</th>
+                            <th class="num">Health probe</th>
+                            <th class="num">Requests</th>
+                            <th class="num">Last check</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mon-table"></tbody>
+                </table>
+                <div class="tbl-foot">Load = share of requests handled in the last 6 s (servers removed from routing receive none). Health probe = round-trip time of the latest <span class="mono">GET /health</span>.</div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Networking telemetry</h2>
+                    <span class="panel-note">last 10 s · every value labelled with its source</span>
+                </div>
+                <div class="tm-grid" id="tm-grid"></div>
+                <div class="tm-split">
+                    <div>
+                        <h3>Backend-reported service time</h3>
+                        <table class="tbl tbl-compact"><thead><tr><th>Server</th><th class="num">Service</th><th class="num">Queue wait</th><th class="num">Queue p95</th><th class="num">Samples</th></tr></thead><tbody id="tm-backend"></tbody></table>
+                    </div>
+                    <div>
+                        <h3>Network events</h3>
+                        <table class="tbl tbl-compact"><thead><tr><th>Event</th><th class="num">Last 10 s</th><th class="num">Total</th><th>Source</th></tr></thead><tbody id="tm-counters"></tbody></table>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div class="section-head">
+                <h2>Event timeline</h2>
+                <span class="panel-note">proxy health checks, failover and recovery</span>
+            </div>
+            <ul class="events events-full" id="mon-events"></ul>
+
+            <details class="raw-log">
+                <summary>Detailed request log</summary>
+                <div class="log-box" id="mon-log"></div>
+            </details>
+        </section>
+
+        <!-- ================= PAGE: CAPACITY ================= -->
+        <section class="page" id="page-capacity" data-page="capacity" hidden>
+            <header class="page-head">
+                <div>
+                    <h1>Resilience &amp; Capacity</h1>
+                    <p class="page-desc">The proxy keeps a service-level objective (SLO) and tries the cheapest fix first. A new server is the last step, not the first.</p>
+                </div>
+                <div class="sys-status" data-status></div>
+            </header>
+
+            <div class="panel sc-panel">
+                <div class="panel-head">
+                    <h2>See each method in action</h2>
+                    <span class="panel-note">80 s each · normal → spike → calm · real traffic</span>
+                </div>
+                <p class="sc-intro">Adding servers is only one way to survive a spike. Pick a situation: the traffic changes, and the controller below decides on its own which method to use.</p>
+                <div class="sc-grid" id="sc-grid"></div>
+                <div class="sc-live" id="sc-live"></div>
+                <div class="sc-chart"><div class="sc-k">What clients received (HTTP responses per second)</div><div class="chart-box chart-box-sm"><canvas id="ch-resp-res"></canvas></div></div>
+            </div>
+
+            <div class="panel rs-panel">
+                <div class="panel-head">
+                    <h2>Cost-aware resilience controller</h2>
+                    <span class="panel-note" id="rs-policy">cheapest fix first, new servers last</span>
+                </div>
+                <div class="rs-slo" id="rs-slo"></div>
+                <div class="rs-ladder" id="rs-ladder"></div>
+                <div class="rs-note" id="rs-note"></div>
+                <h3 class="rs-h3">Everything the system did</h3>
+                <table class="tbl tbl-compact"><thead><tr><th>Time</th><th>Action</th><th>Why</th><th class="num">p95 before → after</th><th class="num">Backend load before → after</th></tr></thead><tbody id="rs-decisions"></tbody></table>
+                <div class="tbl-foot">Mitigations (cache, rate limit, brownout) come from the controller; servers added or removed come from the capacity manager, which may add a server only when the controller allows it.</div>
+            </div>
+
+            <div class="panel topo-panel cap-topo">
+                <div class="panel-head cap-topo-head">
+                    <h2>Load-based server allocation</h2>
+                    <span class="panel-note">nodes = registered servers + replacements being started + replacements just retired (from the proxy's registry)</span>
+                </div>
+                <div class="topo" data-topo="cap"></div>
+                <div class="topo-legend">
+                    <span><i class="lg lg-route"></i>in routing pool</span>
+                    <span><i class="lg lg-cand"></i>being provisioned · not routed</span>
+                    <span><i class="lg lg-drain"></i>draining</span>
+                    <span><i class="lg lg-standby"></i>standby (original, running, not routed)</span>
+                    <span><i class="lg lg-bad"></i>failed / not routable</span>
+                    <span><i class="lg lg-retired"></i>retired (process stopped)</span>
+                    <span class="muted">dots = sample of real routed requests</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Capacity management</h2>
+                    <span class="cap-phase" id="cap-phase">–</span>
+                </div>
+                <div class="cm-grid" id="cm-grid"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-head">
+                    <h2>Current decision</h2>
+                    <span class="panel-note">re-evaluated every second</span>
+                </div>
+                <div class="cap-formula mono" id="cap-formula"></div>
+                <div class="cap-reason" id="cap-reason"></div>
+                <div class="cap-bars" id="cap-bars"></div>
+            </div>
+
+            <details class="panel fold">
+                <summary>Custom traffic <span class="muted small">— run your own traffic instead of a scenario (the sidebar's Start traffic uses the same generator)</span></summary>
+                <div class="form-grid form-grid-4">
+                    <label><span>Rate: <b class="mono" id="tg-rate-val">5</b> req/s</span><input type="range" id="tg-rate" min="1" max="100" value="5"></label>
+                    <label>Items requested<select id="tg-keys"><option value="0" selected>All different (not cacheable)</option><option value="200">200 items, a few very popular</option></select></label>
+                    <label>Heavy clients<select id="tg-heavy"><option value="0" selected>None</option><option value="0.4">2 clients send 40 %</option></select></label>
+                    <label>Arrivals<select id="tg-poisson"><option value="0" selected>Evenly spaced</option><option value="1">Random (like real users)</option></select></label>
+                    <label>Client IPs<select id="tg-clients"><option>1</option><option selected>16</option><option>64</option></select></label>
+                    <label>Concurrent connections<select id="tg-conc"><option selected>8</option><option>24</option><option>32</option></select></label>
+                    <label>Writes<select id="tg-writes"><option value="0" selected>0 %</option><option value="0.1">10 %</option><option value="0.3">30 %</option></select></label>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-sm" id="tg-start">Start traffic</button>
+                    <button class="btn btn-sm btn-ghost" id="tg-stop">Stop</button>
+                </div>
+                <dl class="kv kv-compact kv-row" id="tg-stats"></dl>
+            </details>
+            <details class="panel fold">
+                <summary>Advanced settings <span class="muted small">— thresholds and timers (validated, applied at runtime)</span></summary>
+                <div class="form-grid form-grid-4" id="set-form"></div>
+                <div class="btn-row"><button class="btn btn-sm" id="set-save">Apply</button><span class="set-msg" id="set-msg"></span></div>
+            </details>
+        </section>
+
+        <!-- ================= PAGE: DATA RECOVERY ================= -->
+        <section class="page" id="page-data-recovery" data-page="data-recovery" hidden>
+            <header class="page-head">
+                <div>
+                    <h1>Data Recovery</h1>
+                    <p class="page-desc">If every server fails, a new server can be started in seconds — but the data on the old servers' disks is gone. Which data comes back depends only on the copies that were kept somewhere else.</p>
+                </div>
+                <div class="sys-status" data-status></div>
+            </header>
+
+            <div class="dr-idea">
+                <div class="dr-idea-box"><span class="dr-idea-ico">▣</span><b>Servers</b><span>Replaceable. A new one is started and health-checked in a few seconds.</span></div>
+                <span class="dr-idea-arrow">but</span>
+                <div class="dr-idea-box bad"><span class="dr-idea-ico">◫</span><b>Data on a server's disk</b><span>Lost when every server fails.</span></div>
+                <span class="dr-idea-arrow">so</span>
+                <div class="dr-idea-box ok"><span class="dr-idea-ico">⧉</span><b>Copies kept elsewhere</b><span><b>Backup</b>: a snapshot every <span id="dr-interval">30</span> s · <b>Live copy</b>: updated on every write · <b>Change log</b>: every write, in order</span></div>
+            </div>
+
+            <div class="dr-flow">
+                <div class="panel dr-step" id="drs-1">
+                    <div class="dr-num">1</div>
+                    <div class="dr-body">
+                        <h2>Make some changes</h2>
+                        <p class="muted">Each change goes through the proxy to a backend. The client gets <span class="mono">201 Created</span> only after the change log and the live copy have it too.</p>
+                        <div class="dr-row">
+                            <button class="btn btn-sm btn-primary" id="dr-play">▶ Play the story</button>
+                            <span class="muted small">or by hand:</span>
+                            <button class="btn btn-sm" data-dt="seed">Write 10 records</button>
+                            <button class="btn btn-sm" data-dt="snapshot">Take a backup</button>
+                            <button class="btn btn-sm btn-ghost" data-dt="seed5">Write 5 more</button>
+                            <button class="btn btn-sm btn-ghost" data-dt="update">Change a record</button>
+                            <button class="btn btn-sm btn-ghost" data-dt="delete">Delete a record</button>
+                        </div>
+                        <div class="dr-story" id="dr-story" hidden></div>
+                        <div class="dr-wpath" id="dr-wpath"></div>
+                    </div>
+                </div>
+
+                <div class="panel dr-tl-panel">
+                    <div class="panel-head">
+                        <h2>If every server failed now, which changes would come back?</h2>
+                        <span class="panel-note">every confirmed change, oldest first · read from the files themselves</span>
+                    </div>
+                    <div class="dr-tl" id="dr-tl"></div>
+                    <div class="dr-legend">
+                        <span><i class="tl-chip tl-create">+3</i>record 3 created</span>
+                        <span><i class="tl-chip tl-update">✎3</i>record 3 changed</span>
+                        <span><i class="tl-chip tl-delete">✕3</i>record 3 deleted</span>
+                        <span><i class="tl-cell kept"></i>comes back</span>
+                        <span><i class="tl-cell lost"></i>lost</span>
+                    </div>
+                    <details class="dr-records">
+                        <summary>Record by record: which version each copy holds</summary>
+                        <div class="dr-map" id="dr-map"></div>
+                        <div class="dr-legend">
+                            <span><i class="rc rc-ok"></i>current version</span>
+                            <span><i class="rc rc-old"></i>older version</span>
+                            <span><i class="rc rc-missing"></i>missing</span>
+                            <span><i class="rc rc-extra"></i>deleted, but still in this copy</span>
+                        </div>
+                    </details>
+                </div>
+
+                <div class="panel dr-step" id="drs-2">
+                    <div class="dr-num">2</div>
+                    <div class="dr-body">
+                        <h2>Pick what was kept, then fail every server</h2>
+                        <div class="dr-strats" id="dr-strats"></div>
+                        <div class="dr-row">
+                            <button class="btn btn-fail" id="dr-start">Fail every server and wipe its disk</button>
+                            <button class="btn btn-sm" id="dr-ack" hidden>Accept the data loss and resume service</button>
+                        </div>
+                        <ol class="stepper dr-progress" id="dr-steps"></ol>
+                    </div>
+                </div>
+
+                <div class="panel dr-step" id="drs-3">
+                    <div class="dr-num">3</div>
+                    <div class="dr-body">
+                        <h2>What came back</h2>
+                        <div id="dr-report" class="dr-report"></div>
+                        <div class="dr-row">
+                            <button class="btn btn-sm btn-recover" id="dr-recover">Repair the original servers</button>
+                            <button class="btn btn-sm btn-ghost" data-dt="reset">Start over with empty data</button>
+                            <span class="dr-fact" id="dr-f6"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+        </section>
+
+    </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+    window.LBM_CONFIG = {
+        healthInterval: {{ config.HEALTH_CHECK_INTERVAL }},
+        recoveryThreshold: {{ config.RECOVERY_THRESHOLD }},
+        maxRetries: {{ config.MAX_FAILOVER_RETRIES }},
+        defaultAlgorithm: "{{ config.DEFAULT_ALGORITHM }}",
+        proxyPort: {{ config.LOAD_BALANCER_PORT }}
+    };
+</script>
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard_ext.js"></script>
+</body>
+</html>
